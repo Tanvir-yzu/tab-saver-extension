@@ -1,19 +1,48 @@
 // Load and show saved groups
 
-document.addEventListener("DOMContentLoaded", renderGroups);
+let saveBtn;
+let statusEl;
+let groupCountEl;
+let tabCountEl;
 
-const saveBtn = document.getElementById("saveBtn");
-const statusEl = document.getElementById("status");
+document.addEventListener("DOMContentLoaded", () => {
+  saveBtn = document.getElementById("saveBtn");
+  statusEl = document.getElementById("status");
+  groupCountEl = document.getElementById("groupCount");
+  tabCountEl = document.getElementById("tabCount");
 
-function setStatus(message = "") {
+  if (saveBtn) {
+    saveBtn.addEventListener("click", onSaveCurrentTabs);
+  }
+
+  renderGroups();
+});
+
+function setStatus(message = "", tone = "info") {
+  if (!statusEl) {
+    return;
+  }
+
   statusEl.textContent = message;
+  statusEl.className = message ? `status status-${tone}` : "status";
+}
+
+function updateSummary(groups) {
+  const groupCount = groups.length;
+  const tabCount = groups.reduce((total, group) => total + group.urls.length, 0);
+  if (groupCountEl) {
+    groupCountEl.textContent = `${groupCount} group${groupCount === 1 ? "" : "s"}`;
+  }
+  if (tabCountEl) {
+    tabCountEl.textContent = `${tabCount} tab${tabCount === 1 ? "" : "s"} saved`;
+  }
 }
 
 function isRestorableUrl(url) {
   return typeof url === "string" && /^(https?:|file:|ftp:)/i.test(url);
 }
 
-saveBtn.addEventListener("click", async () => {
+async function onSaveCurrentTabs() {
   setStatus("");
 
   try {
@@ -21,7 +50,7 @@ saveBtn.addEventListener("click", async () => {
     const urls = allTabs.map((tab) => tab.url).filter(isRestorableUrl);
 
     if (urls.length === 0) {
-      setStatus("No restorable tabs found in this window.");
+      setStatus("No restorable tabs found in this window.", "error");
       return;
     }
 
@@ -35,12 +64,12 @@ saveBtn.addEventListener("click", async () => {
 
     tabGroups.push(newGroup);
     await chrome.storage.local.set({ tabGroups });
-    setStatus("Tab group saved.");
+    setStatus("Tab group saved.", "success");
     renderGroups();
   } catch {
-    setStatus("Something went wrong while saving tabs.");
+    setStatus("Something went wrong while saving tabs.", "error");
   }
-});
+}
 
 function getDisplayHostname(url) {
   try {
@@ -57,6 +86,10 @@ async function getCurrentTabUrl() {
 
 async function renderGroups() {
   const container = document.getElementById("savedGroups");
+  if (!container) {
+    return;
+  }
+
   const { tabGroups = [] } = await chrome.storage.local.get("tabGroups");
   const normalizedGroups = tabGroups
     .map((group) => ({
@@ -65,15 +98,15 @@ async function renderGroups() {
     }))
     .filter((group) => group.urls.length > 0);
 
+  updateSummary(normalizedGroups);
   container.innerHTML = "";
+  container.className = "groups-list";
 
   if (normalizedGroups.length === 0) {
     container.textContent = "No saved groups yet.";
-    container.className = "no-groups";
+    container.classList.add("no-groups");
     return;
   }
-
-  container.className = "";
 
   normalizedGroups.forEach((group) => {
     const div = document.createElement("div");
@@ -82,10 +115,20 @@ async function renderGroups() {
     const header = document.createElement("div");
     header.className = "group-header";
 
+    const titleWrap = document.createElement("div");
+    titleWrap.className = "group-title-wrap";
+
     const title = document.createElement("span");
     title.className = "group-title";
     title.textContent = group.name;
-    header.appendChild(title);
+    titleWrap.appendChild(title);
+
+    const count = document.createElement("span");
+    count.className = "group-count";
+    count.textContent = `${group.urls.length} tab${group.urls.length === 1 ? "" : "s"}`;
+    titleWrap.appendChild(count);
+
+    header.appendChild(titleWrap);
 
     const actions = document.createElement("div");
     actions.className = "group-actions";
@@ -98,12 +141,12 @@ async function renderGroups() {
         const currentUrl = await getCurrentTabUrl();
 
         if (!isRestorableUrl(currentUrl)) {
-          setStatus("Current tab cannot be added to a group.");
+          setStatus("Current tab cannot be added to a group.", "error");
           return;
         }
 
         if (group.urls.includes(currentUrl)) {
-          setStatus("This tab is already in the group.");
+          setStatus("This tab is already in the group.", "warn");
           return;
         }
 
@@ -119,10 +162,10 @@ async function renderGroups() {
         });
 
         await chrome.storage.local.set({ tabGroups: nextGroups });
-        setStatus("Current tab added to group.");
+        setStatus("Current tab added to group.", "success");
         renderGroups();
       } catch {
-        setStatus("Failed to add current tab.");
+        setStatus("Failed to add current tab.", "error");
       }
     };
     actions.appendChild(addCurrentBtn);
@@ -140,7 +183,7 @@ async function renderGroups() {
       const trimmedName = nextName.trim();
 
       if (!trimmedName) {
-        setStatus("Group name cannot be empty.");
+        setStatus("Group name cannot be empty.", "warn");
         return;
       }
 
@@ -153,7 +196,7 @@ async function renderGroups() {
       });
 
       await chrome.storage.local.set({ tabGroups: nextGroups });
-      setStatus("Group renamed.");
+      setStatus("Group renamed.", "success");
       renderGroups();
     };
     actions.appendChild(renameBtn);
@@ -174,9 +217,9 @@ async function renderGroups() {
 
       setTimeout(() => {
         if (openedCount > 0) {
-          setStatus(`Opened ${openedCount} tab${openedCount === 1 ? "" : "s"}.`);
+          setStatus(`Opened ${openedCount} tab${openedCount === 1 ? "" : "s"}.`, "success");
         } else {
-          setStatus("Unable to open tabs from this group.");
+          setStatus("Unable to open tabs from this group.", "error");
         }
       }, 120);
     };
@@ -188,7 +231,7 @@ async function renderGroups() {
     delBtn.onclick = async () => {
       const nextGroups = normalizedGroups.filter((savedGroup) => savedGroup.id !== group.id);
       await chrome.storage.local.set({ tabGroups: nextGroups });
-      setStatus("Tab group deleted.");
+      setStatus("Tab group deleted.", "success");
       renderGroups();
     };
     actions.appendChild(delBtn);
@@ -230,7 +273,7 @@ async function renderGroups() {
           .filter((savedGroup) => savedGroup.urls.length > 0);
 
         await chrome.storage.local.set({ tabGroups: nextGroups });
-        setStatus("Tab removed from group.");
+        setStatus("Tab removed from group.", "success");
         renderGroups();
       };
       item.appendChild(removeTabBtn);
