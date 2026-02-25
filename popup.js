@@ -282,6 +282,12 @@ async function renderGroups() {
     delBtn.className = "delete-btn";
     delBtn.textContent = "Delete";
     delBtn.onclick = async () => {
+      const confirmed = confirm(`Delete group "${group.name}"?`);
+      if (!confirmed) {
+        setStatus("Delete canceled.", "info");
+        return;
+      }
+
       const latestGroups = await getNormalizedGroups();
       const nextGroups = latestGroups.filter((savedGroup) => savedGroup.id !== group.id);
       await saveGroups(nextGroups);
