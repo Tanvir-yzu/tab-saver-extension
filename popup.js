@@ -84,6 +84,19 @@ async function getCurrentTabUrl() {
   return activeTab?.url;
 }
 
+function createTab(url) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.create({ url, active: false }, (tab) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+
+      resolve(tab);
+    });
+  });
+}
+
 async function renderGroups() {
   const container = document.getElementById("savedGroups");
   if (!container) {
@@ -205,23 +218,45 @@ async function renderGroups() {
     openBtn.className = "open-btn";
     openBtn.textContent = "Open";
     openBtn.onclick = async () => {
-      let openedCount = 0;
+      try {
+        const existingTabs = await chrome.tabs.query({});
+        const existingUrls = new Set(existingTabs.map((tab) => tab.url).filter(Boolean));
+        const uniqueGroupUrls = [...new Set(group.urls)];
+        const urlsToOpen = uniqueGroupUrls.filter((url) => !existingUrls.has(url));
+        const skippedCount = uniqueGroupUrls.length - urlsToOpen.length;
 
-      group.urls.forEach((url) => {
-        chrome.tabs.create({ url, active: false }, () => {
-          if (!chrome.runtime.lastError) {
-            openedCount += 1;
-          }
-        });
-      });
-
-      setTimeout(() => {
-        if (openedCount > 0) {
-          setStatus(`Opened ${openedCount} tab${openedCount === 1 ? "" : "s"}.`, "success");
-        } else {
-          setStatus("Unable to open tabs from this group.", "error");
+        if (urlsToOpen.length === 0) {
+          setStatus("All tabs in this group are already open.", "info");
+          return;
         }
-      }, 120);
+
+        let openedCount = 0;
+
+        for (const url of urlsToOpen) {
+          try {
+            await createTab(url);
+            openedCount += 1;
+          } catch {
+          }
+        }
+
+        if (openedCount === 0) {
+          setStatus("Unable to open tabs from this group.", "error");
+          return;
+        }
+
+        if (skippedCount > 0) {
+          setStatus(
+            `Opened ${openedCount} tab${openedCount === 1 ? "" : "s"}. Skipped ${skippedCount} already open.`,
+            "success"
+          );
+          return;
+        }
+
+        setStatus(`Opened ${openedCount} tab${openedCount === 1 ? "" : "s"}.`, "success");
+      } catch {
+        setStatus("Unable to open tabs from this group.", "error");
+      }
     };
     actions.appendChild(openBtn);
 
