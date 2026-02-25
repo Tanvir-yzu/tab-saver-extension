@@ -218,7 +218,10 @@ button:focus-visible {
 	border-radius: 8px;
 }
 
-.open-btn { background: var(--success); }
+.open-btn {
+	background: linear-gradient(95deg, #22c55e, #16a34a);
+	box-shadow: 0 0 0 1px rgba(22, 163, 74, 0.25), 0 6px 14px rgba(22, 163, 74, 0.32);
+}
 .add-tab-btn { background: #7c3aed; }
 .rename-btn { background: #2563eb; }
 .delete-btn { background: var(--danger); }
@@ -228,6 +231,11 @@ button:focus-visible {
 .rename-btn:hover,
 .delete-btn:hover {
 	filter: brightness(1.05);
+}
+
+.open-btn:focus-visible {
+	outline: 2px solid #86efac;
+	outline-offset: 1px;
 }
 
 .group-links {
