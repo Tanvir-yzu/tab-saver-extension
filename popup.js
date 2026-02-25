@@ -42,19 +42,41 @@ function isRestorableUrl(url) {
   return typeof url === "string" && /^(https?:|file:|ftp:)/i.test(url);
 }
 
+function dedupeUrls(urls) {
+  return [...new Set(urls.filter(isRestorableUrl))];
+}
+
+function normalizeStoredGroups(tabGroups = []) {
+  return tabGroups
+    .map((group) => ({
+      ...group,
+      urls: dedupeUrls(Array.isArray(group.urls) ? group.urls : [])
+    }))
+    .filter((group) => group.urls.length > 0);
+}
+
+async function getNormalizedGroups() {
+  const { tabGroups = [] } = await chrome.storage.local.get("tabGroups");
+  return normalizeStoredGroups(tabGroups);
+}
+
+async function saveGroups(groups) {
+  await chrome.storage.local.set({ tabGroups: normalizeStoredGroups(groups) });
+}
+
 async function onSaveCurrentTabs() {
   setStatus("");
 
   try {
     const allTabs = await chrome.tabs.query({ currentWindow: true });
-    const urls = allTabs.map((tab) => tab.url).filter(isRestorableUrl);
+    const urls = dedupeUrls(allTabs.map((tab) => tab.url));
 
     if (urls.length === 0) {
       setStatus("No restorable tabs found in this window.", "error");
       return;
     }
 
-    const { tabGroups = [] } = await chrome.storage.local.get("tabGroups");
+    const tabGroups = await getNormalizedGroups();
 
     const newGroup = {
       id: Date.now(),
@@ -63,7 +85,7 @@ async function onSaveCurrentTabs() {
     };
 
     tabGroups.push(newGroup);
-    await chrome.storage.local.set({ tabGroups });
+    await saveGroups(tabGroups);
     setStatus("Tab group saved.", "success");
     renderGroups();
   } catch {
@@ -103,13 +125,7 @@ async function renderGroups() {
     return;
   }
 
-  const { tabGroups = [] } = await chrome.storage.local.get("tabGroups");
-  const normalizedGroups = tabGroups
-    .map((group) => ({
-      ...group,
-      urls: Array.isArray(group.urls) ? group.urls.filter(isRestorableUrl) : []
-    }))
-    .filter((group) => group.urls.length > 0);
+  const normalizedGroups = await getNormalizedGroups();
 
   updateSummary(normalizedGroups);
   container.innerHTML = "";
@@ -163,18 +179,19 @@ async function renderGroups() {
           return;
         }
 
-        const nextGroups = normalizedGroups.map((savedGroup) => {
+        const latestGroups = await getNormalizedGroups();
+        const nextGroups = latestGroups.map((savedGroup) => {
           if (savedGroup.id !== group.id) {
             return savedGroup;
           }
 
           return {
             ...savedGroup,
-            urls: [...savedGroup.urls, currentUrl]
+            urls: dedupeUrls([...savedGroup.urls, currentUrl])
           };
         });
 
-        await chrome.storage.local.set({ tabGroups: nextGroups });
+        await saveGroups(nextGroups);
         setStatus("Current tab added to group.", "success");
         renderGroups();
       } catch {
@@ -200,7 +217,8 @@ async function renderGroups() {
         return;
       }
 
-      const nextGroups = normalizedGroups.map((savedGroup) => {
+      const latestGroups = await getNormalizedGroups();
+      const nextGroups = latestGroups.map((savedGroup) => {
         if (savedGroup.id === group.id) {
           return { ...savedGroup, name: trimmedName };
         }
@@ -208,7 +226,7 @@ async function renderGroups() {
         return savedGroup;
       });
 
-      await chrome.storage.local.set({ tabGroups: nextGroups });
+      await saveGroups(nextGroups);
       setStatus("Group renamed.", "success");
       renderGroups();
     };
@@ -264,8 +282,9 @@ async function renderGroups() {
     delBtn.className = "delete-btn";
     delBtn.textContent = "Delete";
     delBtn.onclick = async () => {
-      const nextGroups = normalizedGroups.filter((savedGroup) => savedGroup.id !== group.id);
-      await chrome.storage.local.set({ tabGroups: nextGroups });
+      const latestGroups = await getNormalizedGroups();
+      const nextGroups = latestGroups.filter((savedGroup) => savedGroup.id !== group.id);
+      await saveGroups(nextGroups);
       setStatus("Tab group deleted.", "success");
       renderGroups();
     };
@@ -294,7 +313,8 @@ async function renderGroups() {
       removeTabBtn.textContent = "✕";
       removeTabBtn.title = "Remove tab from this group";
       removeTabBtn.onclick = async () => {
-        const nextGroups = normalizedGroups
+        const latestGroups = await getNormalizedGroups();
+        const nextGroups = latestGroups
           .map((savedGroup) => {
             if (savedGroup.id !== group.id) {
               return savedGroup;
@@ -307,7 +327,7 @@ async function renderGroups() {
           })
           .filter((savedGroup) => savedGroup.urls.length > 0);
 
-        await chrome.storage.local.set({ tabGroups: nextGroups });
+        await saveGroups(nextGroups);
         setStatus("Tab removed from group.", "success");
         renderGroups();
       };
